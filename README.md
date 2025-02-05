@@ -329,7 +329,10 @@ git pull
 let’s say that you are in a branch (feature-user). if you want to pull changes of that
 ```
 git pull origin <other branch name>
+
+if getting screen like the following, then to EXIT from the screen press :q from the keyboard
 ```
+[https://i.sstatic.net/aJC2R.png]
  
 </p>
 </details>
