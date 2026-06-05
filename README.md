@@ -1,6 +1,10 @@
-# Git Essential Commands
+# Git
 Git is a version control system. Git helps you keep track of code changes.
 
+## Git Tutorials
+1. GitHub Actions Tutorial - Deploy Node.js Application with CI CD and GitHub Actions : https://www.youtube.com/watch?v=y7S2oSjJ8PA
+
+## Git Essential Commands
 A — Files added to stage
 M — Modified files
 D — Deleted files
