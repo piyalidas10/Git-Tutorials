@@ -1,0 +1,265 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - synchronize
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+################################################################################
+# Branch Validation
+################################################################################
+
+  validate-branch-name:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Branch Naming Convention
+        shell: bash
+        run: |
+          BRANCH_NAME="${{ github.head_ref }}"
+
+          echo "Branch name: $BRANCH_NAME"
+
+          if [[ ! "$BRANCH_NAME" =~ ^(feature|bugfix|hotfix|release)/[a-z0-9._-]+$ ]]; then
+            echo "❌ Invalid branch name"
+            echo ""
+            echo "Allowed formats:"
+            echo "feature/your-feature-name"
+            echo "bugfix/your-fix-name"
+            echo "hotfix/critical-fix"
+            echo "release/v1.0.0"
+            exit 1
+          fi
+
+          echo "✅ Branch name is valid"
+
+################################################################################
+# Formatting
+################################################################################
+
+  format:
+    needs: validate-branch-name
+    if: always() && (github.event_name != 'pull_request' || needs.validate-branch-name.result == 'success')
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/cache@v4
+        with:
+          path: .angular/cache
+          key: angular-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+################################################################################
+# Lint
+################################################################################
+
+  lint:
+    needs: format
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/cache@v4
+        with:
+          path: .angular/cache
+          key: angular-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+
+      - run: npm run lint
+
+################################################################################
+# Typecheck
+################################################################################
+
+  typecheck:
+    needs: lint
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/cache@v4
+        with:
+          path: .angular/cache
+          key: angular-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+
+      - run: npx tsc --noEmit
+
+################################################################################
+# Dependency Audit
+################################################################################
+
+  audit:
+    needs: typecheck
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Dependency Audit
+        run: npm audit --audit-level=high
+
+################################################################################
+# Secret Scan
+################################################################################
+
+  gitleaks:
+    needs: audit
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gitleaks/gitleaks-action@v2
+
+################################################################################
+# Unit Test
+################################################################################
+
+  test:
+    needs: gitleaks
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/cache@v4
+        with:
+          path: .angular/cache
+          key: angular-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+
+      - run: |
+          npm run test -- \
+            --watch=false \
+            --browsers=ChromeHeadless \
+            --code-coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+
+################################################################################
+# Build
+################################################################################
+
+  build:
+    needs:
+      - test
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/cache@v4
+        with:
+          path: .angular/cache
+          key: angular-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - run: npm ci
+
+      - name: Production Build
+        run: npm run build -- --configuration production
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+################################################################################
+# CodeQL Security Scan
+################################################################################
+
+  codeql:
+    needs:
+      - build
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - uses: github/codeql-action/analyze@v3
