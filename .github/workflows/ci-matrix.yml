@@ -1,0 +1,35 @@
+name: Matrix Demo
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+        node-version:
+          - 18
+          - 20
+        
+        browser:
+          - chrome
+          - firefox
+          - edge
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - run: node -v
+      - run: npm ci
+      - run: npm run test:${{ matrix.browser }}
